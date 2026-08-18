@@ -54,6 +54,10 @@ type templateData struct {
 	Webhook    config.Webhook
 	Dashboard  config.Dashboard
 
+	// RootRedirect, when non-empty, replaces the catch-all 404 on / with a
+	// 301 to this target. Validated by sanitizeRedirect before it gets here.
+	RootRedirect string
+
 	// TLS-mode fields. Only populated when cfg.TLS.Strategy != "none".
 	TLSStrategy           string
 	TLSDomains            []string
@@ -788,6 +792,15 @@ func (g *Generator) Render(cfg *config.Config) (serverBytes, httpBytes []byte, e
 		if err := sanitizePath(path); err != nil {
 			return nil, nil, fmt.Errorf("deploy %s: %w", d.Name, err)
 		}
+		// A deploy with no listener and no upstream pool is a worker: still
+		// cloned, built and supervised, but there is nothing to proxy to.
+		// Publishing a route for it would render `proxy_pass http://127.0.0.1:0`,
+		// which nginx rejects — and since validation happens on the whole file,
+		// one such worker makes every later reload fail, not just its own route.
+		// "static" is exempt: it legitimately runs portless and serves via alias.
+		if d.Runtime != "static" && d.Port == 0 && len(d.Upstreams) == 0 {
+			continue
+		}
 		entry := deployEntry{
 			Name:       d.Name,
 			Port:       d.Port,
@@ -886,7 +899,14 @@ func (g *Generator) Render(cfg *config.Config) (serverBytes, httpBytes []byte, e
 		}
 	}
 
+	if cfg.RootRedirect != "" {
+		if err := sanitizeRedirect(cfg.RootRedirect); err != nil {
+			return nil, nil, fmt.Errorf("root_redirect: %w", err)
+		}
+	}
+
 	data := templateData{
+		RootRedirect:   cfg.RootRedirect,
 		HTTPPort:       nonZero(cfg.Listen.HTTPPort, 80),
 		HTTPSPort:      nonZero(cfg.Listen.HTTPSPort, 443),
 		ServerName:     serverName,

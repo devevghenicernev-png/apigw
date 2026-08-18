@@ -619,6 +619,6 @@
     }
     {{ end -}}
     location / {
-        return 404;
+        {{ if .RootRedirect }}return 301 {{ .RootRedirect }};{{ else }}return 404;{{ end }}
     }
 {{- end }}

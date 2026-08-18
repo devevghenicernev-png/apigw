@@ -41,6 +41,13 @@ type Config struct {
 	Dashboard Dashboard `koanf:"dashboard" yaml:"dashboard"`
 	TLS       TLS       `koanf:"tls" yaml:"tls"`
 
+	// RootRedirect turns the catch-all `location /` from a bare 404 into a
+	// redirect. Nothing is mounted on / by default, so hitting the bare
+	// hostname looks like the gateway is down when it is merely empty.
+	// Accepts an absolute path ("/dashboard/") or a full URL. Empty keeps
+	// the 404, so existing installs are unaffected.
+	RootRedirect string `koanf:"root_redirect" yaml:"root_redirect"`
+
 	// E1+ enterprise features. All optional; zero-value = feature off.
 	Security Security `koanf:"security" yaml:"security,omitempty"`
 	Tenants  []Tenant `koanf:"tenants" yaml:"tenants,omitempty"`

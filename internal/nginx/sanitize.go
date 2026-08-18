@@ -53,6 +53,43 @@ func sanitizePath(path string) error {
 	return nil
 }
 
+// safeRedirectURLRE constrains absolute redirect targets. Deliberately
+// narrower than a real URL grammar: no userinfo, no spaces, no quotes —
+// just scheme, host and an ordinary path/query.
+var safeRedirectURLRE = regexp.MustCompile(`^https?://[a-zA-Z0-9.-]+(:[0-9]{1,5})?(/[a-zA-Z0-9._/~%&=?+-]*)?$`)
+
+// sanitizeRedirect validates a redirect target before it is interpolated
+// into a `return 301 <target>;` directive. The value reaches us from
+// config.yaml, which an operator may have hand-edited, so an unchecked
+// value here is a straight nginx-config injection: a `;` would close the
+// return and let anything follow it.
+//
+// Accepts either an absolute path ("/dashboard/") or a full http(s) URL.
+func sanitizeRedirect(target string) error {
+	if target == "" {
+		return fmt.Errorf("redirect target is empty")
+	}
+	// '$' is in the list because nginx would expand it as a variable
+	// reference inside the directive, not because it can close it.
+	for _, bad := range []rune{';', '{', '}', '\n', '\r', '"', '\'', '\\', ' ', '$', 0} {
+		if strings.ContainsRune(target, bad) {
+			return fmt.Errorf("redirect target %q contains illegal character %q", target, bad)
+		}
+	}
+	if strings.HasPrefix(target, "/") {
+		// Reject "//host" — browsers read it as protocol-relative and would
+		// send the visitor off-site.
+		if strings.HasPrefix(target, "//") {
+			return fmt.Errorf("redirect target %q is protocol-relative; use a full URL instead", target)
+		}
+		return nil
+	}
+	if !safeRedirectURLRE.MatchString(target) {
+		return fmt.Errorf("redirect target %q must be an absolute path or an http(s) URL", target)
+	}
+	return nil
+}
+
 // sanitizeServerName accepts a single nginx server_name value (no spaces;
 // "_" is a valid catch-all). Multiple names are joined by the caller; we
 // validate each token.
